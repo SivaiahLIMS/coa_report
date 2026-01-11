@@ -1,0 +1,17 @@
+
+# Maven/Java
+target/
+*.log
+*.class
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Uploads / temp
+uploads/
+temp_uploads/
+
+# OS
+.DS_Store

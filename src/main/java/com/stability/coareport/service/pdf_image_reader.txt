@@ -1,0 +1,135 @@
+import com.paddleocr.PaddleOCR;
+import com.paddleocr.OCRResult;
+import com.paddleocr.entity.StructureBlock;
+import com.paddleocr.entity.Cell;
+
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class PdfSecondTableExtractor {
+
+    private final PaddleOCR ocr;
+
+    public PdfSecondTableExtractor() {
+        ocr = new PaddleOCR();
+        ocr.setUseStructure(true);   // IMPORTANT: enables table detection
+    }
+
+    // ------------------------------
+    // Convert PDF page → PNG image
+    // ------------------------------
+    private File convertPageToImage(File pdfFile, int pageIndex) throws Exception {
+        PDDocument doc = PDDocument.load(pdfFile);
+        PDFRenderer renderer = new PDFRenderer(doc);
+
+        BufferedImage image = renderer.renderImageWithDPI(pageIndex, 300);
+        File out = new File("page_" + pageIndex + ".png");
+        ImageIO.write(image, "png", out);
+
+        doc.close();
+        return out;
+    }
+
+    // ------------------------------
+    // Extract second table from a page
+    // ------------------------------
+    private StructureBlock extractSecondTable(File imageFile) {
+        OCRResult result = ocr.ocr(imageFile.getAbsolutePath(), true);
+
+        List<StructureBlock> tables = result.getStructureBlocks()
+                .stream()
+                .filter(b -> "table".equals(b.getType()))
+                .collect(Collectors.toList());
+
+        if (tables.size() < 2) {
+            System.out.println("Page has less than 2 tables");
+            return null;
+        }
+
+        return tables.get(1); // second table
+    }
+
+    // ------------------------------
+    // Convert table → 2D matrix
+    // ------------------------------
+    private String[][] buildMatrix(StructureBlock table) {
+        int maxRow = table.getMaxRow();
+        int maxCol = table.getMaxCol();
+
+        String[][] matrix = new String[maxRow + 1][maxCol + 1];
+
+        for (Cell cell : table.getCells()) {
+            String text = cell.getText().replace("\n", " ").trim();
+            matrix[cell.getRow()][cell.getCol()] = text;
+        }
+
+        return matrix;
+    }
+
+    // ------------------------------
+    // Convert matrix → HTML table
+    // ------------------------------
+    private String matrixToHtml(String[][] matrix) {
+        StringBuilder html = new StringBuilder();
+        html.append("<table border='1' style='border-collapse:collapse;'>");
+
+        for (String[] row : matrix) {
+            html.append("<tr>");
+            for (String cell : row) {
+                html.append("<td>")
+                        .append(cell == null ? "" : cell)
+                        .append("</td>");
+            }
+            html.append("</tr>");
+        }
+
+        html.append("</table>");
+        return html.toString();
+    }
+
+    // ------------------------------
+    // Public method: extract second table from each page
+    // ------------------------------
+    public List<String> extractSecondTablesAsHtml(File pdfFile) throws Exception {
+        List<String> htmlTables = new ArrayList<>();
+
+        PDDocument doc = PDDocument.load(pdfFile);
+        int pageCount = doc.getNumberOfPages();
+        doc.close();
+
+        for (int i = 0; i < pageCount; i++) {
+            File img = convertPageToImage(pdfFile, i);
+            StructureBlock table = extractSecondTable(img);
+
+            if (table != null) {
+                String[][] matrix = buildMatrix(table);
+                String html = matrixToHtml(matrix);
+                htmlTables.add(html);
+            }
+        }
+
+        return htmlTables;
+    }
+
+    // ------------------------------
+    // Example usage
+    // ------------------------------
+    public static void main(String[] args) throws Exception {
+        PdfSecondTableExtractor extractor = new PdfSecondTableExtractor();
+
+        File pdf = new File("Scnning.pdf");
+
+        List<String> tables = extractor.extractSecondTablesAsHtml(pdf);
+
+        for (int i = 0; i < tables.size(); i++) {
+            System.out.println("=== Page " + (i + 1) + " Second Table ===");
+            System.out.println(tables.get(i));
+        }
+    }
+}
